@@ -1,0 +1,14 @@
+---
+description: Niryn project context — read before editing code
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+This project uses Niryn (AgentCtx). Before editing:
+
+1. Read `.agentctx/current-context.md` (active decisions)
+2. Use MCP `get_context_pack` or the local API for task-specific context
+3. Use `.agentctx/maps/symbols.json` for symbol lookup
+4. Re-read source when refs are `changed` or `outdated`
+5. Use MCP `record_decision` to persist project intent from chat
