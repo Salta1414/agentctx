@@ -36,6 +36,9 @@ importers:
       '@niryn/agentctx-spec':
         specifier: workspace:*
         version: link:../agentctx-spec
+      '@niryn/indexer-node':
+        specifier: link:../../../Niryn/packages/indexer-node
+        version: link:../../../Niryn/packages/indexer-node
       better-sqlite3:
         specifier: ^11.7.0
         version: 11.10.0

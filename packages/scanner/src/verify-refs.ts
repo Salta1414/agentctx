@@ -4,8 +4,7 @@ import Database from "better-sqlite3";
 import type { RefStatus } from "@niryn/agentctx-spec";
 import { AGENTCTX_DIR } from "@niryn/agentctx-spec";
 import { getProject, rebuildExportsFromDb } from "./db/rebuild.js";
-import { initSchema } from "./db/schema.js";
-import { parseSource } from "./parse/index.js";
+import { initSchemaV2 } from "./db/schema-v2.js";
 import { sha256 } from "./utils/hash.js";
 import { normalizeProjectRoot } from "./utils/paths.js";
 
@@ -31,7 +30,7 @@ export function verifyContextRefs(projectRoot: string): VerifyRefsResult {
   const verifiedAt = new Date().toISOString();
 
   const db = new Database(dbPath);
-  initSchema(db);
+  initSchemaV2(db);
 
   const project = getProject(db, root);
   if (!project) {
@@ -62,7 +61,7 @@ export function verifyContextRefs(projectRoot: string): VerifyRefsResult {
 
   for (const ref of refs) {
     const previous = ref.status as RefStatus;
-    const status = verifySingleRef(root, ref.path, ref.symbol, ref.content_hash);
+    const status = verifySingleRef(root, ref.path, ref.content_hash);
     if (status !== "valid") staleCount++;
     updateRef.run(status, verifiedAt, ref.id);
     results.push({
@@ -93,7 +92,6 @@ export function verifyContextRefs(projectRoot: string): VerifyRefsResult {
 function verifySingleRef(
   projectRoot: string,
   relPath: string,
-  symbol: string | null,
   storedHash: string,
 ): RefStatus {
   const abs = join(projectRoot, relPath);
@@ -101,15 +99,7 @@ function verifySingleRef(
 
   try {
     const content = readFileSync(abs, "utf8");
-
-    if (!symbol) {
-      return sha256(content) === storedHash ? "valid" : "changed";
-    }
-
-    const parsed = parseSource(relPath, content);
-    const match = parsed.symbols.find((s) => s.name === symbol);
-    if (!match) return "missing";
-    return sha256(match.bodyText) === storedHash ? "valid" : "changed";
+    return sha256(content) === storedHash ? "valid" : "changed";
   } catch {
     return "suspicious";
   }

@@ -22,10 +22,17 @@ export type RelationKind =
 
 export type ExportProfile = "full" | "summary";
 
+export interface ManifestIndexer {
+  name: string;
+  version: string;
+  cbm_fork?: string;
+}
+
 export interface Manifest {
   spec_version: string;
   project: { name: string; root: string };
   generator: { name: string; version: string };
+  indexer?: ManifestIndexer;
   last_full_scan: string;
   last_incremental_scan?: string;
   stack: string[];
@@ -34,6 +41,7 @@ export interface Manifest {
     symbols: number;
     features: number;
     tests: number;
+    languages?: string[];
   };
   /** Present on large repos: JSON maps may be summarized. */
   export_profile?: ExportProfile;

@@ -25,10 +25,8 @@
   },
   "dependencies": {
     "@niryn/agentctx-spec": "workspace:*",
-    "better-sqlite3": "^11.7.0",
-    "tree-sitter": "^0.22.4",
-    "tree-sitter-python": "^0.23.6",
-    "tree-sitter-typescript": "^0.23.2"
+    "@niryn/indexer-node": "link:../../../Niryn/packages/indexer-node",
+    "better-sqlite3": "^11.7.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",

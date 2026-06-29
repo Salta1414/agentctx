@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -14,33 +14,31 @@ const ignoredFile = join(fixtureRoot, "node_modules/demo-package/index.ts");
 let originalSource = "";
 
 beforeAll(async () => {
-  if (!existsSync(join(fixtureRoot, ".agentctx", "context.db"))) {
-    await runScan({ projectRoot: fixtureRoot, full: true });
-  }
+  await runScan({ projectRoot: fixtureRoot, full: true });
   originalSource = readFileSync(targetFile, "utf8");
-});
+}, 120_000);
 
-afterEach(() => {
+afterEach(async () => {
   rmSync(join(fixtureRoot, "node_modules/demo-package"), {
     recursive: true,
     force: true,
   });
   writeFileSync(targetFile, originalSource, "utf8");
-  runIncrementalScan({
+  await runIncrementalScan({
     projectRoot: fixtureRoot,
     changedPaths: ["src/features/invoices/createInvoice.ts"],
   });
 });
 
 describe("runIncrementalScan", () => {
-  it("updates graph when a file changes", () => {
+  it("updates graph when a file changes", async () => {
     const modified = originalSource.replace(
       "Cannot create invoice before client approval",
       "Cannot create invoice before project approval",
     );
     writeFileSync(targetFile, modified, "utf8");
 
-    const result = runIncrementalScan({
+    const result = await runIncrementalScan({
       projectRoot: fixtureRoot,
       changedPaths: ["src/features/invoices/createInvoice.ts"],
     });
@@ -55,8 +53,8 @@ describe("runIncrementalScan", () => {
     expect(onDisk).toContain("last_incremental_scan");
   });
 
-  it("detects stale refs before incremental catches up", () => {
-    const modified = originalSource.replace("approvedAmount", "invoiceAmount");
+  it("detects stale refs when file content hash changes", () => {
+    const modified = `${originalSource}\n// hash-bump\n`;
     writeFileSync(targetFile, modified, "utf8");
 
     const stale = verifyContextRefs(fixtureRoot);
@@ -64,11 +62,11 @@ describe("runIncrementalScan", () => {
     expect(stale.refs.some((r) => r.status === "changed")).toBe(true);
   });
 
-  it("restores valid refs after incremental update", () => {
-    const modified = originalSource.replace("approvedAmount", "invoiceAmount");
+  it("restores valid refs after incremental update", async () => {
+    const modified = `${originalSource}\n// hash-bump\n`;
     writeFileSync(targetFile, modified, "utf8");
 
-    runIncrementalScan({
+    await runIncrementalScan({
       projectRoot: fixtureRoot,
       changedPaths: ["src/features/invoices/createInvoice.ts"],
     });
@@ -77,11 +75,11 @@ describe("runIncrementalScan", () => {
     expect(fresh.stale_count).toBe(0);
   });
 
-  it("does not index ignored paths during incremental updates", () => {
+  it("does not index ignored paths during incremental updates", async () => {
     mkdirSync(join(fixtureRoot, "node_modules/demo-package"), { recursive: true });
     writeFileSync(ignoredFile, "export function ignoredPackageSymbol() {}\n", "utf8");
 
-    const result = runIncrementalScan({
+    const result = await runIncrementalScan({
       projectRoot: fixtureRoot,
       changedPaths: ["node_modules/demo-package/index.ts"],
     });

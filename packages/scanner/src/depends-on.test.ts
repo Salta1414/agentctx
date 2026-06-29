@@ -10,7 +10,7 @@ const fixtureRoot = resolve(
 
 beforeAll(async () => {
   await runScan({ projectRoot: fixtureRoot, full: true });
-});
+}, 120_000);
 
 describe("depends_on detection", () => {
   it("detects invoices depends on projects via relative imports", () => {

@@ -1,7 +1,15 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { AGENTCTX_DIR, SPEC_VERSION } from "@niryn/agentctx-spec";
-import type { Manifest } from "@niryn/agentctx-spec";
+import {
+  AGENTCTX_DIR,
+  CBM_FORK_VERSION,
+  GENERATOR_NAME,
+  GENERATOR_VERSION,
+  INDEXER_NAME,
+  INDEXER_VERSION,
+  SPEC_VERSION,
+  type Manifest,
+} from "@niryn/agentctx-spec";
 import {
   exportProfileForSymbolCount,
   SCAN_EXPORT_LIMITS,
@@ -42,6 +50,7 @@ export interface ExportContext {
   stats: Manifest["stats"];
   git?: GitContext;
   activeFile?: string | null;
+  specVersion?: string;
 }
 
 function buildFeatureFileIndex(
@@ -135,9 +144,14 @@ export function writeExports(ctx: ExportContext): string[] {
   }
 
   const manifest: Manifest = {
-    spec_version: SPEC_VERSION,
+    spec_version: ctx.specVersion ?? SPEC_VERSION,
     project: { name: ctx.projectName, root: ctx.projectRoot },
-    generator: { name: "niryn", version: "0.1.0" },
+    generator: { name: GENERATOR_NAME, version: GENERATOR_VERSION },
+    indexer: {
+      name: INDEXER_NAME,
+      version: INDEXER_VERSION,
+      cbm_fork: CBM_FORK_VERSION,
+    },
     last_full_scan: ctx.scannedAt,
     ...(ctx.lastIncrementalScan
       ? { last_incremental_scan: ctx.lastIncrementalScan }

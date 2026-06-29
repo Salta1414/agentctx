@@ -29,6 +29,7 @@ function globToRegExp(glob: string): RegExp {
 }
 
 function matchesExtraIgnore(path: string, pattern: string): boolean {
+  if (typeof pattern !== "string") return false;
   const normalized = toPosixPath(pattern.trim()).replace(/^\.\/+/, "");
   if (!normalized) return false;
   if (normalized.includes("*")) return globToRegExp(normalized).test(path);

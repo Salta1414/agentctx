@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type Database from "better-sqlite3";
 import {
   exportProfileForSymbolCount,
@@ -14,13 +12,7 @@ import {
 import { writeExports, type ExportSymbol } from "../exports/write.js";
 import { getGitContext } from "../git/context.js";
 import { isRepoIgnoredPath } from "../ignore.js";
-import { parseSource } from "../parse/index.js";
-import {
-  isTestPath,
-  resolveImportPath,
-  toPosixPath,
-} from "../utils/paths.js";
-import { walkSourceFiles } from "../walk/files.js";
+import { SCAN_SPEC_VERSION } from "../indexer/overlay.js";
 
 interface ProjectRow {
   id: string;
@@ -69,132 +61,6 @@ export function deleteProjectRelations(db: Database.Database, projectId: string)
     `DELETE FROM relations
      WHERE source_id IN (${placeholders}) OR target_id IN (${placeholders})`,
   ).run(...ids, ...ids);
-}
-
-export function rebuildRelations(
-  db: Database.Database,
-  projectId: string,
-  projectRoot: string,
-) {
-  deleteProjectRelations(db, projectId);
-
-  const insertRelation = db.prepare(
-    `INSERT INTO relations (id, source_kind, source_id, target_kind, target_id, relation, weight)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-
-  const config = loadConfig(projectRoot);
-  const files = (db
-    .prepare(`SELECT id, path FROM files WHERE project_id = ?`)
-    .all(projectId) as Array<{ id: string; path: string }>).filter(
-    (file) => !isRepoIgnoredPath(file.path, config.ignore ?? []),
-  );
-
-  const fileIdByPath = new Map(files.map((f) => [f.path, f.id]));
-
-  const symbols = (db
-    .prepare(
-      `SELECT s.id, s.name, f.path as file_path
-       FROM symbols s JOIN files f ON f.id = s.file_id
-       WHERE f.project_id = ?`,
-    )
-    .all(projectId) as Array<{ id: string; name: string; file_path: string }>).filter(
-    (symbol) => !isRepoIgnoredPath(symbol.file_path, config.ignore ?? []),
-  );
-
-  const symbolIdsByName = new Map<string, string[]>();
-  for (const sym of symbols) {
-    const list = symbolIdsByName.get(sym.name) ?? [];
-    list.push(sym.id);
-    symbolIdsByName.set(sym.name, list);
-  }
-
-  const fileImports = new Map<string, string[]>();
-  const fileRecords: Array<{ path: string; featureSlug: string | null }> = [];
-
-  const allPaths = walkSourceFiles(projectRoot, config.ignore ?? []);
-  const features = detectFeatures(allPaths, config);
-
-  for (const file of files) {
-    const absPath = join(projectRoot, file.path);
-    const source = readFileSync(absPath, "utf8");
-    const parsed = parseSource(file.path, source);
-    const featureSlug = featureForPath(file.path, features);
-
-    fileRecords.push({ path: file.path, featureSlug });
-
-    const resolvedImports: string[] = [];
-    for (const imp of parsed.imports) {
-      const resolved = resolveImportPath(absPath, imp.specifier, projectRoot);
-      if (resolved && !isRepoIgnoredPath(resolved, config.ignore ?? [])) {
-        resolvedImports.push(resolved);
-      }
-      const targetFileId = resolved ? fileIdByPath.get(resolved) : undefined;
-      if (targetFileId) {
-        insertRelation.run(
-          crypto.randomUUID(),
-          "file",
-          file.id,
-          "file",
-          targetFileId,
-          "imports",
-          1,
-        );
-      }
-    }
-    fileImports.set(file.path, resolvedImports);
-
-    for (const call of parsed.calls) {
-      const targetIds = symbolIdsByName.get(call.name) ?? [];
-      for (const targetId of targetIds) {
-        insertRelation.run(
-          crypto.randomUUID(),
-          "file",
-          file.id,
-          "symbol",
-          targetId,
-          "calls",
-          1,
-        );
-      }
-    }
-  }
-
-  const featureIdBySlug = new Map(
-    (
-      db
-        .prepare(`SELECT id, slug FROM features WHERE project_id = ?`)
-        .all(projectId) as Array<{ id: string; slug: string }>
-    ).map((f) => [f.slug, f.id]),
-  );
-
-  for (const feature of features) {
-    const featureId = featureIdBySlug.get(feature.slug);
-    if (!featureId) continue;
-    for (const other of features) {
-      if (other.slug === feature.slug) continue;
-      const importsOther = fileRecords.some((f) => {
-        if (f.featureSlug !== feature.slug) return false;
-        return (fileImports.get(f.path) ?? []).some(
-          (imp) => featureForPath(imp, features) === other.slug,
-        );
-      });
-      if (importsOther) {
-        const otherId = featureIdBySlug.get(other.slug);
-        if (otherId) {
-          insertRelation.run(
-            crypto.randomUUID(),
-            "feature",
-            featureId,
-            "feature",
-            otherId,
-            "depends_on",
-            1,
-          );
-        }
-      }
-    }
-  }
 }
 
 export function rebuildExportsFromDb(
@@ -246,21 +112,19 @@ export function rebuildExportsFromDb(
 
   const symbols = (db
     .prepare(
-      `SELECT s.id, s.name, s.kind, s.signature, s.body_hash, s.exported,
-              f.path as file_path
-       FROM symbols s
-       JOIN files f ON f.id = s.file_id
-       WHERE f.project_id = ?`,
+      `SELECT s.id, s.name, s.kind, s.signature, s.exported, s.file_path, f.content_hash
+       FROM niryn_symbol_cache s
+       JOIN files f ON f.path = s.file_path AND f.project_id = s.project_id
+       WHERE s.project_id = ?`,
     )
     .all(projectId) as Array<{
     id: string;
     name: string;
     kind: string;
-    signature: string;
-    body_hash: string;
+    signature: string | null;
     exported: number;
     file_path: string;
-    file_id?: string;
+    content_hash: string;
   }>).filter((symbol) => !isRepoIgnoredPath(symbol.file_path, config.ignore ?? []));
 
   const relations = db.prepare(`SELECT source_id, target_id, relation FROM relations`).all() as Array<{
@@ -290,8 +154,8 @@ export function rebuildExportsFromDb(
     name: s.name,
     kind: s.kind,
     path: s.file_path,
-    signature: s.signature,
-    content_hash: s.body_hash,
+    signature: s.signature ?? s.name,
+    content_hash: s.content_hash,
     exported: s.exported === 1,
     called_by: [...(calledBy.get(s.id) ?? [])],
     imports_from: [],
@@ -353,6 +217,7 @@ export function rebuildExportsFromDb(
     relations: [],
     stats,
     git: getGitContext(projectRoot),
+    specVersion: SCAN_SPEC_VERSION,
   });
 
   return written;

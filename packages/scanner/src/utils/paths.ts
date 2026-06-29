@@ -3,8 +3,9 @@ import { dirname, extname, join, normalize, relative, resolve } from "node:path"
 
 const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".php"];
 
-export function toPosixPath(path: string): string {
-  return path.split("\\").join("/");
+export function toPosixPath(path: unknown): string {
+  const value = typeof path === "string" ? path : path == null ? "" : String(path);
+  return value.split("\\").join("/");
 }
 
 export function resolveImportPath(
