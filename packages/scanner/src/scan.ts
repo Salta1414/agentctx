@@ -66,6 +66,8 @@ export interface ScanResult {
     symbols: number;
     features: number;
     tests: number;
+    cbm_nodes?: number;
+    cbm_edges?: number;
   };
   exports: string[];
 }
@@ -178,7 +180,10 @@ export async function runScan(options: ScanOptions): Promise<ScanResult> {
   );
 
   const exports = rebuildExportsFromDb(db2, projectId, projectRoot, scannedAt);
-  const stats = computeStats(db2, projectId);
+  const stats = computeStats(db2, projectId, {
+    nodeCount: indexResult.nodeCount,
+    edgeCount: indexResult.edgeCount,
+  });
 
   if (legacyV1) {
     dropLegacyTables(db2);

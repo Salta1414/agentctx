@@ -12,7 +12,7 @@ import {
 import { writeExports, type ExportSymbol } from "../exports/write.js";
 import { getGitContext } from "../git/context.js";
 import { isRepoIgnoredPath } from "../ignore.js";
-import { SCAN_SPEC_VERSION } from "../indexer/overlay.js";
+import { SCAN_SPEC_VERSION, computeStats } from "../indexer/overlay.js";
 
 interface ProjectRow {
   id: string;
@@ -189,12 +189,7 @@ export function rebuildExportsFromDb(
 
   const featureIdBySlug = new Map(features.map((f) => [f.slug, f.id]));
 
-  const stats = {
-    files: files.length,
-    symbols: symbols.length,
-    features: features.length,
-    tests: files.filter((f) => f.is_test === 1).length,
-  };
+  const stats = computeStats(db, projectId);
 
   const written = writeExports({
     projectRoot,

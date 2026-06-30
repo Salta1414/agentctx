@@ -42,6 +42,8 @@ export interface Manifest {
     features: number;
     tests: number;
     languages?: string[];
+    cbm_nodes?: number;
+    cbm_edges?: number;
   };
   /** Present on large repos: JSON maps may be summarized. */
   export_profile?: ExportProfile;

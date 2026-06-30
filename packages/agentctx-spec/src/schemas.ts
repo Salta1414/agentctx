@@ -27,6 +27,8 @@ export const manifestSchema = z.object({
     features: z.number(),
     tests: z.number(),
     languages: z.array(z.string()).optional(),
+    cbm_nodes: z.number().optional(),
+    cbm_edges: z.number().optional(),
   }),
   export_profile: z.enum(["full", "summary"]).optional(),
   export_note: z.string().optional(),

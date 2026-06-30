@@ -159,7 +159,15 @@ export function removeFileOverlay(
 export function computeStats(
   db: Database.Database,
   projectId: string,
-): { files: number; symbols: number; features: number; tests: number } {
+  cbmCounts?: { nodeCount?: number; edgeCount?: number },
+): {
+  files: number;
+  symbols: number;
+  features: number;
+  tests: number;
+  cbm_nodes?: number;
+  cbm_edges?: number;
+} {
   const files = (
     db.prepare(`SELECT COUNT(*) AS c FROM files WHERE project_id = ?`).get(projectId) as {
       c: number;
@@ -184,7 +192,41 @@ export function computeStats(
       )
       .get(projectId) as { c: number }
   ).c;
-  return { files, symbols, features, tests };
+
+  let cbm_nodes = cbmCounts?.nodeCount;
+  let cbm_edges = cbmCounts?.edgeCount;
+
+  if (cbm_nodes == null || cbm_edges == null) {
+    const project = db
+      .prepare(`SELECT cbm_project_key FROM projects WHERE id = ?`)
+      .get(projectId) as { cbm_project_key: string | null } | undefined;
+    const cbmKey = project?.cbm_project_key;
+    if (cbmKey && tableExists(db, "cbm_nodes")) {
+      if (cbm_nodes == null) {
+        cbm_nodes = (
+          db.prepare(`SELECT COUNT(*) AS c FROM cbm_nodes WHERE project = ?`).get(cbmKey) as {
+            c: number;
+          }
+        ).c;
+      }
+      if (cbm_edges == null && tableExists(db, "cbm_edges")) {
+        cbm_edges = (
+          db.prepare(`SELECT COUNT(*) AS c FROM cbm_edges WHERE project = ?`).get(cbmKey) as {
+            c: number;
+          }
+        ).c;
+      }
+    }
+  }
+
+  return {
+    files,
+    symbols,
+    features,
+    tests,
+    ...(cbm_nodes != null ? { cbm_nodes } : {}),
+    ...(cbm_edges != null ? { cbm_edges } : {}),
+  };
 }
 
 export function syncTests(db: Database.Database, projectId: string): void {

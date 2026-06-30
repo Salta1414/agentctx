@@ -4,11 +4,55 @@ import {
   cbmEdgeToRelation,
   mapCbmNodeToGraphSymbol,
   SYMBOL_LABELS,
+  type CbmGraphNode,
 } from "./map-cbm.js";
 
 const EDGE_TYPES = ["CALLS", "IMPORTS", "HTTP_CALLS", "ASYNC_CALLS", "SEMANTICALLY_RELATED"];
 
-export function rebuildSymbolCache(db: Database.Database, projectId: string, handle: IndexHandle): number {
+function tableExists(db: Database.Database, table: string): boolean {
+  const row = db
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(table);
+  return row !== undefined;
+}
+
+function loadSymbolNodesFromDb(
+  db: Database.Database,
+  projectId: string,
+): CbmGraphNode[] | null {
+  if (!tableExists(db, "cbm_nodes")) {
+    return null;
+  }
+  const project = db
+    .prepare(`SELECT cbm_project_key FROM projects WHERE id = ?`)
+    .get(projectId) as { cbm_project_key: string | null } | undefined;
+  const cbmKey = project?.cbm_project_key;
+  if (!cbmKey) {
+    return null;
+  }
+  const placeholders = SYMBOL_LABELS.map(() => "?").join(", ");
+  return db
+    .prepare(
+      `SELECT id, label, name, qualified_name, file_path, start_line, end_line
+       FROM cbm_nodes
+       WHERE project = ? AND label IN (${placeholders})`,
+    )
+    .all(cbmKey, ...SYMBOL_LABELS) as CbmGraphNode[];
+}
+
+function loadSymbolNodesFromHandle(handle: IndexHandle): CbmGraphNode[] {
+  const nodes: CbmGraphNode[] = [];
+  for (const label of SYMBOL_LABELS) {
+    nodes.push(...handle.searchGraph({ label, limit: 50_000 }));
+  }
+  return nodes;
+}
+
+export function rebuildSymbolCache(
+  db: Database.Database,
+  projectId: string,
+  handle: IndexHandle,
+): number {
   db.prepare(`DELETE FROM niryn_symbol_cache WHERE project_id = ?`).run(projectId);
 
   const fileIdByPath = new Map<string, string>();
@@ -25,26 +69,25 @@ export function rebuildSymbolCache(db: Database.Database, projectId: string, han
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
+  const nodes = loadSymbolNodesFromDb(db, projectId) ?? loadSymbolNodesFromHandle(handle);
+
   let count = 0;
   const tx = db.transaction(() => {
-    for (const label of SYMBOL_LABELS) {
-      const nodes = handle.searchGraph({ label, limit: 5000 });
-      for (const node of nodes) {
-        const sym = mapCbmNodeToGraphSymbol(node, (path) => fileIdByPath.get(path) ?? path);
-        insert.run(
-          projectId,
-          sym.id,
-          node.file_path,
-          sym.name,
-          sym.kind,
-          sym.qualifiedName,
-          sym.signature,
-          sym.exported ? 1 : 0,
-          sym.startLine,
-          sym.endLine,
-        );
-        count += 1;
-      }
+    for (const node of nodes) {
+      const sym = mapCbmNodeToGraphSymbol(node, (path) => fileIdByPath.get(path) ?? path);
+      insert.run(
+        projectId,
+        sym.id,
+        node.file_path,
+        sym.name,
+        sym.kind,
+        sym.qualifiedName,
+        sym.signature,
+        sym.exported ? 1 : 0,
+        sym.startLine,
+        sym.endLine,
+      );
+      count += 1;
     }
   });
   tx();
