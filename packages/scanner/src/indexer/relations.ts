@@ -123,7 +123,7 @@ export function rebuildNirynRelations(
   }
 
   const insert = db.prepare(
-    `INSERT INTO relations (id, source_kind, source_id, target_kind, target_id, relation, weight)
+    `INSERT OR IGNORE INTO relations (id, source_kind, source_id, target_kind, target_id, relation, weight)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
 
@@ -161,7 +161,7 @@ export function rebuildNirynRelations(
           if (!sourceFileId) {
             continue;
           }
-          insert.run(
+          const result = insert.run(
             `${sourceFileId}:calls:${targetId}`,
             "file",
             sourceFileId,
@@ -170,7 +170,7 @@ export function rebuildNirynRelations(
             relation,
             1,
           );
-          count += 1;
+          count += result.changes;
         } else if (CBM_IMPORT_EDGE_TYPES.includes(edgeType)) {
           const sourceNode = db
             .prepare(`SELECT file_path FROM cbm_nodes WHERE id = ? AND project = ?`)
@@ -186,7 +186,7 @@ export function rebuildNirynRelations(
           if (!sourceFileId || !targetFileId) {
             continue;
           }
-          insert.run(
+          const result = insert.run(
             `${sourceFileId}:imports:${targetFileId}`,
             "file",
             sourceFileId,
@@ -195,7 +195,7 @@ export function rebuildNirynRelations(
             relation,
             1,
           );
-          count += 1;
+          count += result.changes;
         }
       }
     }
